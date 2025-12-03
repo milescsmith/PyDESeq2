@@ -10,6 +10,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from scipy.linalg import solve  # type: ignore
 from scipy.optimize import minimize  # type: ignore
+from scipy.sparse import csr_matrix  # type: ignore
+from scipy.sparse import issparse  # type: ignore
 from scipy.special import gammaln  # type: ignore
 from scipy.special import polygamma  # type: ignore
 from scipy.stats import norm  # type: ignore
@@ -107,14 +109,14 @@ def load_example_data(
     return df
 
 
-def test_valid_counts(counts: pd.DataFrame | np.ndarray) -> None:
+def test_valid_counts(counts: pd.DataFrame | np.ndarray | csr_matrix) -> None:
     """Test that the count matrix contains valid inputs.
 
     More precisely, test that inputs are non-negative integers.
 
     Parameters
     ----------
-    counts : pandas.DataFrame or ndarray
+    counts : pandas.DataFrame or ndarray or csr_matrix
         Raw counts. One column per gene, rows are indexed by sample barcodes.
     """
     if isinstance(counts, pd.DataFrame):
@@ -122,15 +124,27 @@ def test_valid_counts(counts: pd.DataFrame | np.ndarray) -> None:
             raise ValueError("NaNs are not allowed in the count matrix.")
         if not np.issubdtype(counts.to_numpy().dtype, np.number):
             raise ValueError("The count matrix should only contain numbers.")
+    elif issparse(counts):
+        if np.isnan(counts.data).any():
+            raise ValueError("NaNs are not allowed in the count matrix.")
+        if not np.issubdtype(counts.dtype, np.number):
+            raise ValueError("The count matrix should only contain numbers.")
     else:
         if np.isnan(counts).any().any():
             raise ValueError("NaNs are not allowed in the count matrix.")
         if not np.issubdtype(counts.dtype, np.number):
             raise ValueError("The count matrix should only contain numbers.")
-    if (counts % 1 != 0).any().any():
-        raise ValueError("The count matrix should only contain integers.")
-    if (counts < 0).any().any():
-        raise ValueError("The count matrix should only contain non-negative values.")
+
+    if issparse(counts):
+        if (counts.data % 1 != 0).any().any():
+            raise ValueError("The count matrix should only contain integers.")
+        if (counts.data < 0).any().any():
+            raise ValueError("The count matrix should only contain non-negative values.")
+    else:
+        if (counts % 1 != 0).any().any():
+            raise ValueError("The count matrix should only contain integers.")
+        if (counts < 0).any().any():
+            raise ValueError("The count matrix should only contain non-negative values.")
 
 
 def dispersion_trend(
