@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from formulaic_contrasts import FormulaicContrasts  # type: ignore[import-untyped]
 from scipy.optimize import minimize
+from scipy.sparse import issparse  # type: ignore
 from scipy.special import polygamma  # type: ignore
 from scipy.stats import f  # type: ignore
 from scipy.stats import trim_mean  # type: ignore
@@ -679,6 +680,16 @@ class DeseqDataSet(ad.AnnData):
             self.logmeans = logmeans
 
         # Test whether it is possible to use median-of-ratios.
+        elif issparse(self.X):
+            if self.X.count_nonzero(axis=0).any().all():
+                # There is at least a zero for each gene
+                warnings.warn(
+                    "Every gene contains at least one zero, "
+                    "cannot compute log geometric means. Switching to iterative mode.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                self._fit_iterate_size_factors()
         elif (self.X == 0).any(0).all():
             # There is at least a zero for each gene
             warnings.warn(
@@ -691,7 +702,7 @@ class DeseqDataSet(ad.AnnData):
 
         elif self.X is not None:
             self.logmeans, self.filtered_genes = deseq2_norm_fit(
-                self.X.toarray() if not isinstance(self.X, np.ndarray) else self.X
+                self.X.toarray() if issparse(self.X) else self.X
             )
             _control_mask &= self.filtered_genes
 
@@ -726,7 +737,11 @@ class DeseqDataSet(ad.AnnData):
             self.fit_size_factors(fit_type=self.size_factors_fit_type)
 
         # Exclude genes with all zeroes
-        self.var["non_zero"] = ~(self.X == 0).all(axis=0)
+        self.var["non_zero"] = (
+            ~(self.X.count_nonzero(axis=0) == 0)
+            if issparse(self.X)
+            else ~(self.X == 0).all(axis=0)
+        )
         self.non_zero_idx = np.arange(self.n_vars)[self.var["non_zero"]]
         self.non_zero_genes = self.var_names[self.var["non_zero"]]
 
